@@ -10,6 +10,9 @@ module Philiprehberger
         @data = {}
         @order = []
         @mutex = Mutex.new
+        @hits = 0
+        @misses = 0
+        @evictions = 0
       end
 
       # Get a value by key. Returns nil if missing or expired.
@@ -19,13 +22,18 @@ module Philiprehberger
       def get(key)
         @mutex.synchronize do
           entry = @data[key]
-          return nil unless entry
-
-          if entry.expired?
-            remove_entry(key)
+          unless entry
+            @misses += 1
             return nil
           end
 
+          if entry.expired?
+            remove_entry(key)
+            @misses += 1
+            return nil
+          end
+
+          @hits += 1
           touch(key)
           entry.value
         end
@@ -117,6 +125,54 @@ module Philiprehberger
         end
       end
 
+      # Returns all non-expired keys.
+      #
+      # @return [Array<String>] list of valid keys
+      def keys
+        @mutex.synchronize do
+          @data.each_with_object([]) do |(key, entry), result|
+            result << key unless entry.expired?
+          end
+        end
+      end
+
+      # Hash-like read access. Alias for #get.
+      #
+      # @param key [String] the cache key
+      # @return the cached value, or nil
+      def [](key)
+        get(key)
+      end
+
+      # Hash-like write access. Alias for #set without TTL/tags.
+      #
+      # @param key [String] the cache key
+      # @param value the value to cache
+      # @return the stored value
+      def []=(key, value)
+        set(key, value)
+      end
+
+      # Returns cache statistics.
+      #
+      # @return [Hash] stats with :size, :hits, :misses, :evictions
+      def stats
+        @mutex.synchronize do
+          { size: @data.size, hits: @hits, misses: @misses, evictions: @evictions }
+        end
+      end
+
+      # Removes all expired entries.
+      #
+      # @return [Integer] number of entries removed
+      def prune
+        @mutex.synchronize do
+          expired_keys = @data.select { |_, entry| entry.expired? }.keys
+          expired_keys.each { |k| remove_entry(k) }
+          expired_keys.size
+        end
+      end
+
       private
 
       def touch(key)
@@ -126,7 +182,10 @@ module Philiprehberger
 
       def evict
         oldest = @order.first
-        remove_entry(oldest) if oldest
+        if oldest
+          remove_entry(oldest)
+          @evictions += 1
+        end
       end
 
       def remove_entry(key)
