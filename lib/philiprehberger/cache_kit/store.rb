@@ -20,23 +20,7 @@ module Philiprehberger
       # @param key [String] the cache key
       # @return the cached value, or nil
       def get(key)
-        @mutex.synchronize do
-          entry = @data[key]
-          unless entry
-            @misses += 1
-            return nil
-          end
-
-          if entry.expired?
-            remove_entry(key)
-            @misses += 1
-            return nil
-          end
-
-          @hits += 1
-          touch(key)
-          entry.value
-        end
+        @mutex.synchronize { fetch_entry(key) }
       end
 
       # Store a value.
@@ -73,16 +57,9 @@ module Philiprehberger
         computed
       end
 
-      # Delete a specific key.
-      #
-      # @param key [String] the cache key
       # @return [Boolean] true if the key existed
       def delete(key)
-        @mutex.synchronize do
-          removed = @data.key?(key)
-          remove_entry(key)
-          removed
-        end
+        @mutex.synchronize { @data.key?(key).tap { remove_entry(key) } }
       end
 
       # Invalidate all entries with a given tag.
@@ -98,14 +75,9 @@ module Philiprehberger
         end
       end
 
-      # Clear all entries.
-      #
       # @return [void]
       def clear
-        @mutex.synchronize do
-          @data.clear
-          @order.clear
-        end
+        @mutex.synchronize { @data.clear && @order.clear }
       end
 
       # @return [Integer] number of entries (including expired ones not yet evicted)
@@ -113,57 +85,31 @@ module Philiprehberger
         @mutex.synchronize { @data.size }
       end
 
-      # @param key [String]
       # @return [Boolean] true if the key exists and is not expired
       def key?(key)
         @mutex.synchronize do
           entry = @data[key]
-          return false unless entry
-          return false if entry.expired?
-
-          true
+          entry ? !entry.expired? : false
         end
       end
 
-      # Returns all non-expired keys.
-      #
       # @return [Array<String>] list of valid keys
       def keys
-        @mutex.synchronize do
-          @data.each_with_object([]) do |(key, entry), result|
-            result << key unless entry.expired?
-          end
-        end
+        @mutex.synchronize { @data.reject { |_, entry| entry.expired? }.keys }
       end
 
-      # Hash-like read access. Alias for #get.
-      #
-      # @param key [String] the cache key
-      # @return the cached value, or nil
-      def [](key)
-        get(key)
-      end
+      # @param key [String]
+      def [](key) = get(key)
 
-      # Hash-like write access. Alias for #set without TTL/tags.
-      #
-      # @param key [String] the cache key
+      # @param key [String]
       # @param value the value to cache
-      # @return the stored value
-      def []=(key, value)
-        set(key, value)
-      end
+      def []=(key, value) = set(key, value)
 
-      # Returns cache statistics.
-      #
       # @return [Hash] stats with :size, :hits, :misses, :evictions
       def stats
-        @mutex.synchronize do
-          { size: @data.size, hits: @hits, misses: @misses, evictions: @evictions }
-        end
+        @mutex.synchronize { { size: @data.size, hits: @hits, misses: @misses, evictions: @evictions } }
       end
 
-      # Removes all expired entries.
-      #
       # @return [Integer] number of entries removed
       def prune
         @mutex.synchronize do
@@ -180,12 +126,31 @@ module Philiprehberger
         @order.push(key)
       end
 
+      def fetch_entry(key)
+        entry = @data[key]
+        return record_miss unless entry
+
+        if entry.expired?
+          remove_entry(key)
+          return record_miss
+        end
+
+        @hits += 1
+        touch(key)
+        entry.value
+      end
+
+      def record_miss
+        @misses += 1
+        nil
+      end
+
       def evict
         oldest = @order.first
-        if oldest
-          remove_entry(oldest)
-          @evictions += 1
-        end
+        return unless oldest
+
+        remove_entry(oldest)
+        @evictions += 1
       end
 
       def remove_entry(key)
