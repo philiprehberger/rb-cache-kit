@@ -266,7 +266,7 @@ RSpec.describe Philiprehberger::CacheKit::Store do
       sleep 0.1
       cache.get("temp")
 
-      expect(evicted).to eq([["temp", "data"]])
+      expect(evicted).to eq([%w[temp data]])
     end
 
     it "calls the callback on TTL expiry during prune" do

@@ -10,8 +10,8 @@ module Philiprehberger
       # @return [Hash] key => value pairs (missing/expired keys map to nil)
       def get_many(keys)
         @mutex.synchronize do
-          keys.each_with_object({}) do |key, result|
-            result[key] = fetch_entry(key)
+          keys.to_h do |key|
+            [key, fetch_entry(key)]
           end
         end
       end

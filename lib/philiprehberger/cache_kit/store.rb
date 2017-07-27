@@ -57,7 +57,7 @@ module Philiprehberger
       end
 
       def key?(key)
-        @mutex.synchronize { check_key(key) }
+        @mutex.synchronize { key_present?(key) }
       end
 
       def keys
@@ -113,7 +113,7 @@ module Philiprehberger
         matched.size
       end
 
-      def check_key(key)
+      def key_present?(key)
         entry = @data[key]
         entry ? !entry.expired? : false
       end
