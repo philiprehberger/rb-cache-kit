@@ -3,6 +3,7 @@
 [![Tests](https://github.com/philiprehberger/rb-cache-kit/actions/workflows/ci.yml/badge.svg)](https://github.com/philiprehberger/rb-cache-kit/actions/workflows/ci.yml)
 [![Gem Version](https://badge.fury.io/rb/philiprehberger-cache_kit.svg)](https://rubygems.org/gems/philiprehberger-cache_kit)
 [![License](https://img.shields.io/github/license/philiprehberger/rb-cache-kit)](LICENSE)
+[![Sponsor](https://img.shields.io/badge/sponsor-GitHub%20Sponsors-ec6cb9)](https://github.com/sponsors/philiprehberger)
 
 In-memory LRU cache with TTL, tags, and thread safety
 
@@ -199,4 +200,4 @@ bundle exec rubocop
 
 ## License
 
-MIT
+[MIT](LICENSE)
