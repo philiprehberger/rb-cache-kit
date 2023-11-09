@@ -989,4 +989,76 @@ RSpec.describe Philiprehberger::CacheKit::Store do
       expect(cache.stats[:evictions]).to eq(3)
     end
   end
+
+  describe '#set_many' do
+    it 'sets multiple entries at once' do
+      store = Philiprehberger::CacheKit::Store.new(max_size: 100)
+      store.set_many({ 'a' => 1, 'b' => 2, 'c' => 3 })
+      expect(store.get('a')).to eq(1)
+      expect(store.get('b')).to eq(2)
+      expect(store.get('c')).to eq(3)
+    end
+
+    it 'applies TTL to all entries' do
+      store = Philiprehberger::CacheKit::Store.new(max_size: 100)
+      store.set_many({ 'a' => 1 }, ttl: 1)
+      expect(store.get('a')).to eq(1)
+    end
+
+    it 'applies tags to all entries' do
+      store = Philiprehberger::CacheKit::Store.new(max_size: 100)
+      store.set_many({ 'a' => 1, 'b' => 2 }, tags: ['group'])
+      store.invalidate_tag('group')
+      expect(store.get('a')).to be_nil
+      expect(store.get('b')).to be_nil
+    end
+  end
+
+  describe '#compact' do
+    it 'removes expired entries' do
+      store = Philiprehberger::CacheKit::Store.new(max_size: 100)
+      store.set('a', 1, ttl: 0)
+      store.set('b', 2)
+      sleep 0.01
+      count = store.compact
+      expect(count).to eq(1)
+      expect(store.get('a')).to be_nil
+      expect(store.get('b')).to eq(2)
+    end
+
+    it 'returns zero when nothing expired' do
+      store = Philiprehberger::CacheKit::Store.new(max_size: 100)
+      store.set('a', 1)
+      expect(store.compact).to eq(0)
+    end
+  end
+
+  describe '#refresh' do
+    it 'resets TTL for existing entry' do
+      store = Philiprehberger::CacheKit::Store.new(max_size: 100)
+      store.set('a', 1, ttl: 1)
+      result = store.refresh('a', ttl: 60)
+      expect(result).to be true
+      expect(store.get('a')).to eq(1)
+    end
+
+    it 'returns false for missing key' do
+      store = Philiprehberger::CacheKit::Store.new(max_size: 100)
+      expect(store.refresh('missing')).to be false
+    end
+
+    it 'returns false for expired key' do
+      store = Philiprehberger::CacheKit::Store.new(max_size: 100)
+      store.set('a', 1, ttl: 0)
+      sleep 0.01
+      expect(store.refresh('a', ttl: 60)).to be false
+    end
+
+    it 'preserves the value' do
+      store = Philiprehberger::CacheKit::Store.new(max_size: 100)
+      store.set('a', 'hello', ttl: 10)
+      store.refresh('a', ttl: 60)
+      expect(store.get('a')).to eq('hello')
+    end
+  end
 end

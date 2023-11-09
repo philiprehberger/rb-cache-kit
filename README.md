@@ -93,6 +93,24 @@ cache.get_many(["a", "b", "missing"])
 # => { "a" => 1, "b" => 2, "missing" => nil }
 ```
 
+### Bulk Set
+
+```ruby
+cache.set_many({ 'a' => 1, 'b' => 2, 'c' => 3 }, ttl: 300, tags: ['batch'])
+```
+
+### Compact
+
+```ruby
+evicted = cache.compact  # => 3 (number of expired entries removed)
+```
+
+### Refresh
+
+```ruby
+cache.refresh('key', ttl: 600)  # => true (reset TTL without changing value)
+```
+
 ### Hash-like Access
 
 ```ruby
@@ -186,6 +204,9 @@ new_cache.restore(Marshal.load(File.read("cache.bin")))
 | `Store#prune` | Remove all expired entries, returns count removed |
 | `Store#on_evict { \|key, value\| }` | Register eviction callback |
 | `Store#get_many(keys)` | Batch get, returns `{ key => value }` hash |
+| `#set_many(hash, ttl:, tags:)` | Bulk set multiple entries |
+| `#compact` | Prune expired entries, return eviction count |
+| `#refresh(key, ttl:)` | Reset TTL without changing value |
 | `Store#snapshot` | Serialize cache state to a hash |
 | `Store#restore(data)` | Restore cache state from a snapshot |
 
