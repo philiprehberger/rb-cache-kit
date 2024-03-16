@@ -83,14 +83,14 @@ cache.prune
 
 ### Batch Get
 
-Retrieve multiple keys in a single lock acquisition. Returns a hash mapping each key to its value (or nil if missing/expired).
+Retrieve multiple keys in a single lock acquisition. Returns a hash of found entries only, skipping misses.
 
 ```ruby
 cache.set("a", 1)
 cache.set("b", 2)
 
-cache.get_many(["a", "b", "missing"])
-# => { "a" => 1, "b" => 2, "missing" => nil }
+cache.get_many("a", "b", "missing")
+# => { "a" => 1, "b" => 2 }
 ```
 
 ### Bulk Set
@@ -203,7 +203,7 @@ new_cache.restore(Marshal.load(File.read("cache.bin")))
 | `Store#stats(tag: name)` | Returns `{ hits:, misses:, evictions: }` for a tag |
 | `Store#prune` | Remove all expired entries, returns count removed |
 | `Store#on_evict { \|key, value\| }` | Register eviction callback |
-| `Store#get_many(keys)` | Batch get, returns `{ key => value }` hash |
+| `Store#get_many(*keys)` | Batch get, returns `{ key => value }` for found entries |
 | `#set_many(hash, ttl:, tags:)` | Bulk set multiple entries |
 | `#compact` | Prune expired entries, return eviction count |
 | `#refresh(key, ttl:)` | Reset TTL without changing value |

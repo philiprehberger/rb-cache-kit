@@ -411,36 +411,46 @@ RSpec.describe Philiprehberger::CacheKit::Store do
       cache.set('b', 2)
       cache.set('c', 3)
 
-      result = cache.get_many(%w[a b c])
+      result = cache.get_many('a', 'b', 'c')
       expect(result).to eq('a' => 1, 'b' => 2, 'c' => 3)
     end
 
-    it 'returns nil for missing keys' do
+    it 'skips missing keys' do
       cache.set('a', 1)
 
-      result = cache.get_many(%w[a missing])
-      expect(result).to eq('a' => 1, 'missing' => nil)
+      result = cache.get_many('a', 'missing')
+      expect(result).to eq('a' => 1)
+      expect(result).not_to have_key('missing')
     end
 
-    it 'returns nil for expired keys' do
+    it 'skips expired keys' do
       cache.set('a', 1, ttl: 0.05)
       cache.set('b', 2)
       sleep 0.1
 
-      result = cache.get_many(%w[a b])
-      expect(result).to eq('a' => nil, 'b' => 2)
+      result = cache.get_many('a', 'b')
+      expect(result).to eq('b' => 2)
+      expect(result).not_to have_key('a')
     end
 
     it 'returns an empty hash for empty input' do
-      result = cache.get_many([])
+      result = cache.get_many
       expect(result).to eq({})
+    end
+
+    it 'accepts an array via splat' do
+      cache.set('a', 1)
+      cache.set('b', 2)
+
+      result = cache.get_many(*%w[a b])
+      expect(result).to eq('a' => 1, 'b' => 2)
     end
 
     it 'updates hit and miss stats correctly' do
       cache.set('a', 1)
       cache.set('b', 2)
 
-      cache.get_many(%w[a b missing])
+      cache.get_many('a', 'b', 'missing')
       stats = cache.stats
       expect(stats[:hits]).to eq(2)
       expect(stats[:misses]).to eq(1)
@@ -708,7 +718,7 @@ RSpec.describe Philiprehberger::CacheKit::Store do
     it 'promotes touched keys in LRU order' do
       5.times { |i| cache.set("k#{i}", i) }
       # Touch k0 and k1 via get_many
-      cache.get_many(%w[k0 k1])
+      cache.get_many('k0', 'k1')
       # Now k2 is the LRU
       cache.set('extra', 99)
 
@@ -717,15 +727,15 @@ RSpec.describe Philiprehberger::CacheKit::Store do
       expect(cache.get('k2')).to be_nil
     end
 
-    it 'returns all nils when every key is missing' do
-      result = cache.get_many(%w[x y z])
-      expect(result).to eq('x' => nil, 'y' => nil, 'z' => nil)
+    it 'returns empty hash when every key is missing' do
+      result = cache.get_many('x', 'y', 'z')
+      expect(result).to eq({})
     end
 
     it 'tracks tag stats for hits on tagged entries' do
       cache.set('a', 1, tags: ['grp'])
       cache.set('b', 2, tags: ['grp'])
-      cache.get_many(%w[a b])
+      cache.get_many('a', 'b')
 
       expect(cache.stats(tag: 'grp')[:hits]).to eq(2)
     end
