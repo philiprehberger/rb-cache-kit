@@ -119,7 +119,116 @@ module Philiprehberger
         end
       end
 
+      # Remaining seconds until the entry expires.
+      #
+      # Returns nil when the key is missing, expired, or has no TTL.
+      #
+      # @param key [String] the cache key
+      # @return [Float, nil]
+      def ttl(key)
+        @mutex.synchronize do
+          entry = @data[key]
+          next nil if entry.nil? || entry.expired?
+
+          entry.remaining_ttl
+        end
+      end
+
+      # Absolute expiration time of the entry.
+      #
+      # Returns nil when the key is missing, expired, or has no TTL.
+      #
+      # @param key [String] the cache key
+      # @return [Time, nil]
+      def expire_at(key)
+        @mutex.synchronize do
+          entry = @data[key]
+          next nil if entry.nil? || entry.expired?
+
+          entry.expire_at
+        end
+      end
+
+      # Bulk-delete multiple keys in a single lock acquisition.
+      # Does not fire eviction callbacks (matches #delete semantics).
+      #
+      # @param keys [Array<String>] keys to delete
+      # @return [Integer] number of keys that were actually removed
+      def delete_many(*keys)
+        keys = keys.flatten
+        @mutex.synchronize do
+          removed = 0
+          keys.each do |key|
+            next unless @data.key?(key)
+
+            remove_entry(key)
+            removed += 1
+          end
+          removed
+        end
+      end
+
+      # Return the keys associated with a given tag.
+      # Excludes expired entries.
+      #
+      # @param tag [String, Symbol]
+      # @return [Array<String>]
+      def keys_by_tag(tag)
+        tag_s = tag.to_s
+        @mutex.synchronize do
+          @data.each_with_object([]) do |(key, entry), acc|
+            next if entry.expired?
+
+            acc << key if entry.tags.include?(tag_s)
+          end
+        end
+      end
+
+      # Atomically increment a numeric entry. Initializes missing or
+      # expired keys to 0 before applying the delta.
+      #
+      # @param key [String] the cache key
+      # @param by [Numeric] amount to add (default 1)
+      # @param ttl [Numeric, nil] optional TTL override (nil preserves current TTL)
+      # @return [Numeric] the new value
+      # @raise [Error] when the existing value is not numeric
+      def increment(key, by: 1, ttl: nil)
+        @mutex.synchronize { apply_counter_delta(key, by, ttl: ttl) }
+      end
+
+      # Atomically decrement a numeric entry. See #increment.
+      #
+      # @param key [String] the cache key
+      # @param by [Numeric] amount to subtract (default 1)
+      # @param ttl [Numeric, nil] optional TTL override
+      # @return [Numeric] the new value
+      # @raise [Error] when the existing value is not numeric
+      def decrement(key, by: 1, ttl: nil)
+        @mutex.synchronize { apply_counter_delta(key, -by, ttl: ttl) }
+      end
+
       private
+
+      def apply_counter_delta(key, delta, ttl: nil)
+        entry = @data[key]
+        current, preserved_tags, preserved_ttl = counter_state(entry)
+        raise Error, "value at #{key.inspect} is not numeric" unless current.is_a?(Numeric)
+
+        new_value = current + delta
+        remove_entry(key) if @data.key?(key)
+        effective_ttl = ttl.nil? ? preserved_ttl : ttl
+        @data[key] = Entry.new(new_value, ttl: effective_ttl, tags: preserved_tags)
+        @order.push(key)
+        new_value
+      end
+
+      def counter_state(entry)
+        if entry.nil? || entry.expired?
+          [0, [], nil]
+        else
+          [entry.value, entry.tags, entry.ttl]
+        end
+      end
 
       def global_stats
         { size: @data.size, hits: @hits, misses: @misses, evictions: @evictions }

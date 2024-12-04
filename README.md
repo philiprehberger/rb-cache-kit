@@ -169,6 +169,62 @@ cache.stats(tag: "posts")
 # => { hits: 0, misses: 0, evictions: 0 }
 ```
 
+### TTL Introspection
+
+Read the remaining or absolute expiration without consuming the entry.
+
+```ruby
+cache.set("session", "abc", ttl: 60)
+
+cache.ttl("session")       # => 59.87 (Float seconds)
+cache.expire_at("session") # => 2026-04-14 14:41:23 +0000 (Time)
+
+cache.set("permanent", "x")
+cache.ttl("permanent")     # => nil (no TTL)
+cache.ttl("missing")       # => nil
+```
+
+### Bulk Delete
+
+```ruby
+cache.set("a", 1)
+cache.set("b", 2)
+cache.set("c", 3)
+
+cache.delete_many("a", "b", "missing") # => 2 (count actually removed)
+cache.keys                              # => ["c"]
+```
+
+### Keys by Tag
+
+Inspect which keys carry a tag without invalidating them.
+
+```ruby
+cache.set("user:1", data1, tags: ["users"])
+cache.set("user:2", data2, tags: ["users"])
+cache.set("post:1", data3, tags: ["posts"])
+
+cache.keys_by_tag("users") # => ["user:1", "user:2"]
+cache.keys_by_tag(:users)  # => ["user:1", "user:2"]
+cache.keys_by_tag("none")  # => []
+```
+
+### Atomic Counters
+
+Atomically increment and decrement numeric entries. Missing or expired keys
+are initialized to 0 before the delta is applied.
+
+```ruby
+cache.increment("views")             # => 1
+cache.increment("views")             # => 2
+cache.increment("views", by: 5)      # => 7
+cache.increment("views", ttl: 3600)  # => 8 (and resets TTL to 3600s)
+
+cache.decrement("quota", by: 2)      # => -2 (if "quota" was missing)
+```
+
+Non-numeric values raise `Philiprehberger::CacheKit::Error`.
+
 ### Snapshot and Restore
 
 Serialize cache state for warm restarts. The snapshot captures all entries with their remaining TTL, tags, and LRU order.
@@ -209,6 +265,12 @@ new_cache.restore(Marshal.load(File.read("cache.bin")))
 | `#refresh(key, ttl:)` | Reset TTL without changing value |
 | `Store#snapshot` | Serialize cache state to a hash |
 | `Store#restore(data)` | Restore cache state from a snapshot |
+| `Store#ttl(key)` | Remaining seconds until expiry (nil if none/missing/expired) |
+| `Store#expire_at(key)` | Absolute expiration `Time` (nil if none/missing/expired) |
+| `Store#delete_many(*keys)` | Bulk-delete, returns count removed |
+| `Store#keys_by_tag(tag)` | Keys associated with a tag (non-expired) |
+| `Store#increment(key, by:, ttl:)` | Atomic numeric increment |
+| `Store#decrement(key, by:, ttl:)` | Atomic numeric decrement |
 
 ## Development
 
