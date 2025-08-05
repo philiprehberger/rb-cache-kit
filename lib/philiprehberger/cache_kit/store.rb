@@ -64,6 +64,14 @@ module Philiprehberger
         @mutex.synchronize { @data.reject { |_, e| e.expired? }.keys }
       end
 
+      # Returns all non-expired values in the cache.
+      # Read-only introspection: does not affect LRU ordering.
+      #
+      # @return [Array]
+      def values
+        @mutex.synchronize { @data.reject { |_, e| e.expired? }.values.map(&:value) }
+      end
+
       def [](key) = get(key)
 
       def []=(key, value)

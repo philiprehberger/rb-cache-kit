@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.7.0] - 2026-04-15
+
+### Added
+- `#values` returns an array of all non-expired values currently in the cache; read-only introspection that does not affect LRU ordering
+
 ## [0.6.1] - 2026-04-15
 
 ### Fixed

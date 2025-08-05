@@ -195,6 +195,19 @@ cache.delete_many("a", "b", "missing") # => 2 (count actually removed)
 cache.keys                              # => ["c"]
 ```
 
+### Values
+
+Inspect all non-expired values without affecting LRU order.
+
+```ruby
+cache.set('a', 1)
+cache.set('b', 2)
+cache.set('c', 3, ttl: 0.05)
+sleep 0.1
+
+cache.values # => [1, 2] (expired 'c' excluded; LRU order untouched)
+```
+
 ### Keys by Tag
 
 Inspect which keys carry a tag without invalidating them.
@@ -253,6 +266,7 @@ new_cache.restore(Marshal.load(File.read("cache.bin")))
 | `Store#size` | Number of entries |
 | `Store#key?(key)` | Check if a key exists and is not expired |
 | `Store#keys` | Returns all non-expired keys |
+| `Store#values` | Returns all non-expired values (does not affect LRU order) |
 | `Store#[](key)` | Hash-like read (alias for `get`) |
 | `Store#[]=(key, value)` | Hash-like write (alias for `set` without TTL/tags) |
 | `Store#stats` | Returns `{ size:, hits:, misses:, evictions: }` |
