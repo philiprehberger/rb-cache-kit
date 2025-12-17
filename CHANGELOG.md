@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.8.0] - 2026-04-18
+
+### Added
+- `Store#touch(key, ttl: nil)` — promotes a key to most-recently-used in LRU order and optionally resets TTL; returns `true` for live keys, `false` for missing or expired keys
+
 ## [0.7.0] - 2026-04-15
 
 ### Added

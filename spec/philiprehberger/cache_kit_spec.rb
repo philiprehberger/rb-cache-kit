@@ -1110,6 +1110,60 @@ RSpec.describe Philiprehberger::CacheKit::Store do
     end
   end
 
+  describe '#touch' do
+    it 'returns false for a missing key and leaves the store unchanged' do
+      store = Philiprehberger::CacheKit::Store.new(max_size: 5)
+      store.set('a', 1)
+      store.set('b', 2)
+
+      expect(store.touch('missing')).to be false
+      expect(store.keys).to contain_exactly('a', 'b')
+      expect(store.size).to eq(2)
+    end
+
+    it 'returns true and promotes a live key to most-recently-used' do
+      store = Philiprehberger::CacheKit::Store.new(max_size: 5)
+      5.times { |i| store.set("k#{i}", i) }
+
+      # k0 is currently LRU; touching it should move it to MRU
+      expect(store.touch('k0')).to be true
+
+      # Now k1 is the LRU — inserting one more should evict k1, not k0
+      store.set('extra', 99)
+      expect(store.get('k0')).to eq(0)
+      expect(store.get('k1')).to be_nil
+    end
+
+    it 'returns false for an expired key and removes it' do
+      store = Philiprehberger::CacheKit::Store.new(max_size: 5)
+      store.set('a', 1, ttl: 0.05)
+      sleep 0.1
+
+      expect(store.touch('a')).to be false
+      expect(store.key?('a')).to be false
+    end
+
+    it 'resets the entry expiry when ttl: is provided' do
+      store = Philiprehberger::CacheKit::Store.new(max_size: 5)
+      store.set('a', 1, ttl: 1)
+
+      expect(store.touch('a', ttl: 60)).to be true
+      remaining = store.ttl('a')
+      expect(remaining).to be > 1
+      expect(remaining).to be <= 60
+    end
+
+    it 'does not change expiry when ttl: is omitted' do
+      store = Philiprehberger::CacheKit::Store.new(max_size: 5)
+      store.set('a', 1, ttl: 300)
+      original_expire_at = store.expire_at('a')
+
+      expect(store.touch('a')).to be true
+
+      expect(store.expire_at('a')).to eq(original_expire_at)
+    end
+  end
+
   describe '#ttl' do
     it 'returns remaining seconds for a key with TTL' do
       store = Philiprehberger::CacheKit::Store.new(max_size: 10)

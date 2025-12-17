@@ -127,6 +127,29 @@ module Philiprehberger
         end
       end
 
+      # Promote a key to most-recently-used in LRU order. Optionally resets
+      # the entry's TTL to `now + ttl` seconds when a `ttl:` is provided.
+      # Expired entries are removed as a side effect.
+      #
+      # @param key [String] the cache key
+      # @param ttl [Numeric, nil] optional new TTL in seconds
+      # @return [Boolean] true if the key exists and is live; false otherwise
+      def touch(key, ttl: nil)
+        @mutex.synchronize do
+          entry = @data[key]
+          return false if entry.nil?
+
+          if entry.expired?
+            evict_entry(key)
+            return false
+          end
+
+          entry.reset_ttl!(ttl) unless ttl.nil?
+          promote_key(key)
+          true
+        end
+      end
+
       # Remaining seconds until the entry expires.
       #
       # Returns nil when the key is missing, expired, or has no TTL.
