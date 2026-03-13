@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.1] - 2026-03-13
+
+### Fixed
+- Fix SyntaxError: setter method `[]=` cannot use endless method definition
+
 ## [0.2.0] - 2026-03-13
 
 ### Added

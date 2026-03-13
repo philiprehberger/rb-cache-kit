@@ -103,7 +103,9 @@ module Philiprehberger
 
       # @param key [String]
       # @param value the value to cache
-      def []=(key, value) = set(key, value)
+      def []=(key, value)
+        set(key, value)
+      end
 
       # @return [Hash] stats with :size, :hits, :misses, :evictions
       def stats
