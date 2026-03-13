@@ -68,6 +68,13 @@ cache.set("post:1", data3, tags: ["posts"])
 cache.invalidate_tag("users") # removes user:1 and user:2, keeps post:1
 ```
 
+### Hash-like Access
+
+```ruby
+cache["user:1"] = { name: "Alice" }
+cache["user:1"] # => { name: "Alice" }
+```
+
 ### LRU Eviction
 
 ```ruby
@@ -80,6 +87,27 @@ cache.set("d", 4) # evicts "a" (least recently used)
 
 cache.get("a") # => nil
 cache.get("d") # => 4
+```
+
+### Pruning Expired Entries
+
+```ruby
+cache.set("a", 1, ttl: 1)
+cache.set("b", 2, ttl: 1)
+cache.set("c", 3)
+# ... after TTL expires ...
+cache.prune # => 2 (removed expired entries)
+```
+
+### Stats
+
+```ruby
+cache.set("a", 1)
+cache.get("a")       # hit
+cache.get("missing") # miss
+
+cache.stats
+# => { size: 1, hits: 1, misses: 1, evictions: 0 }
 ```
 
 ## API
@@ -95,6 +123,11 @@ cache.get("d") # => 4
 | `Store#clear` | Remove all entries |
 | `Store#size` | Number of entries |
 | `Store#key?(key)` | Check if a key exists and is not expired |
+| `Store#keys` | Returns all non-expired keys |
+| `Store#[](key)` | Hash-like read (alias for `get`) |
+| `Store#[]=(key, value)` | Hash-like write (alias for `set` without TTL/tags) |
+| `Store#stats` | Returns `{ size:, hits:, misses:, evictions: }` |
+| `Store#prune` | Remove all expired entries, returns count removed |
 
 ## Development
 

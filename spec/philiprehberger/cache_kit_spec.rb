@@ -147,4 +147,83 @@ RSpec.describe Philiprehberger::CacheKit::Store do
       expect(cache.key?("a")).to be false
     end
   end
+
+  describe "#keys" do
+    it "returns all non-expired keys" do
+      cache.set("a", 1)
+      cache.set("b", 2)
+      cache.set("c", 3, ttl: 0.05)
+      sleep 0.1
+      expect(cache.keys).to contain_exactly("a", "b")
+    end
+
+    it "returns an empty array when cache is empty" do
+      expect(cache.keys).to eq([])
+    end
+  end
+
+  describe "#[] and #[]=" do
+    it "reads values with []" do
+      cache.set("key", "value")
+      expect(cache["key"]).to eq("value")
+    end
+
+    it "returns nil for missing keys with []" do
+      expect(cache["missing"]).to be_nil
+    end
+
+    it "writes values with []=" do
+      cache["key"] = "value"
+      expect(cache.get("key")).to eq("value")
+    end
+  end
+
+  describe "#stats" do
+    it "returns size, hits, misses, and evictions" do
+      cache.set("a", 1)
+      cache.get("a")
+      cache.get("missing")
+
+      stats = cache.stats
+      expect(stats[:size]).to eq(1)
+      expect(stats[:hits]).to eq(1)
+      expect(stats[:misses]).to eq(1)
+      expect(stats[:evictions]).to eq(0)
+    end
+
+    it "tracks evictions" do
+      5.times { |i| cache.set("k#{i}", i) }
+      cache.set("extra", 99)
+
+      expect(cache.stats[:evictions]).to eq(1)
+    end
+
+    it "counts expired gets as misses" do
+      cache.set("a", 1, ttl: 0.05)
+      sleep 0.1
+      cache.get("a")
+
+      expect(cache.stats[:misses]).to eq(1)
+      expect(cache.stats[:hits]).to eq(0)
+    end
+  end
+
+  describe "#prune" do
+    it "removes all expired entries and returns count" do
+      cache.set("a", 1, ttl: 0.05)
+      cache.set("b", 2, ttl: 0.05)
+      cache.set("c", 3)
+      sleep 0.1
+
+      removed = cache.prune
+      expect(removed).to eq(2)
+      expect(cache.size).to eq(1)
+      expect(cache.get("c")).to eq(3)
+    end
+
+    it "returns zero when nothing is expired" do
+      cache.set("a", 1)
+      expect(cache.prune).to eq(0)
+    end
+  end
 end

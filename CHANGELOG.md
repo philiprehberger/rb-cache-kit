@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-03-13
+
+### Added
+- `keys` method returns all non-expired cache keys
+- `[]` and `[]=` hash-like accessors for get/set
+- `stats` method returns size, hits, misses, and eviction counts
+- `prune` method removes all expired entries and returns count removed
+- Hit/miss/eviction tracking counters (thread-safe)
+
 ## [0.1.0] - 2026-03-10
 
 ### Added
