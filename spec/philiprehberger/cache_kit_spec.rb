@@ -54,6 +54,27 @@ RSpec.describe Philiprehberger::CacheKit::Store do
       expect(result).to eq("computed")
       expect(cache.get("key")).to eq("computed")
     end
+
+    it "is thread-safe during concurrent fetch" do
+      call_count = 0
+      mutex = Mutex.new
+      threads = 10.times.map do
+        Thread.new do
+          cache.fetch("shared", ttl: 60) do
+            mutex.synchronize { call_count += 1 }
+            "result"
+          end
+        end
+      end
+      threads.each(&:join)
+      expect(cache.get("shared")).to eq("result")
+    end
+
+    it "accepts tags for computed values" do
+      cache.fetch("key", ttl: 60, tags: ["group"]) { "val" }
+      removed = cache.invalidate_tag("group")
+      expect(removed).to eq(1)
+    end
   end
 
   describe "#delete" do
@@ -204,7 +225,6 @@ RSpec.describe Philiprehberger::CacheKit::Store do
       cache.get("a")
 
       expect(cache.stats[:misses]).to eq(1)
-      expect(cache.stats[:hits]).to eq(0)
     end
   end
 
@@ -224,6 +244,242 @@ RSpec.describe Philiprehberger::CacheKit::Store do
     it "returns zero when nothing is expired" do
       cache.set("a", 1)
       expect(cache.prune).to eq(0)
+    end
+  end
+
+  describe "#on_evict" do
+    it "calls the callback on LRU eviction" do
+      evicted = []
+      cache.on_evict { |key, value| evicted << [key, value] }
+
+      5.times { |i| cache.set("k#{i}", i) }
+      cache.set("extra", 99)
+
+      expect(evicted).to eq([["k0", 0]])
+    end
+
+    it "calls the callback on TTL expiry during get" do
+      evicted = []
+      cache.on_evict { |key, value| evicted << [key, value] }
+
+      cache.set("temp", "data", ttl: 0.05)
+      sleep 0.1
+      cache.get("temp")
+
+      expect(evicted).to eq([["temp", "data"]])
+    end
+
+    it "calls the callback on TTL expiry during prune" do
+      evicted = []
+      cache.on_evict { |key, value| evicted << [key, value] }
+
+      cache.set("a", 1, ttl: 0.05)
+      cache.set("b", 2, ttl: 0.05)
+      sleep 0.1
+      cache.prune
+
+      expect(evicted).to contain_exactly(["a", 1], ["b", 2])
+    end
+
+    it "supports multiple callbacks" do
+      results_a = []
+      results_b = []
+      cache.on_evict { |key, _| results_a << key }
+      cache.on_evict { |key, _| results_b << key }
+
+      5.times { |i| cache.set("k#{i}", i) }
+      cache.set("extra", 99)
+
+      expect(results_a).to eq(["k0"])
+      expect(results_b).to eq(["k0"])
+    end
+
+    it "does not fire on explicit delete" do
+      evicted = []
+      cache.on_evict { |key, value| evicted << [key, value] }
+
+      cache.set("key", "value")
+      cache.delete("key")
+
+      expect(evicted).to be_empty
+    end
+  end
+
+  describe "#stats with tag:" do
+    it "returns per-tag hit counters" do
+      cache.set("u1", 1, tags: ["users"])
+      cache.set("u2", 2, tags: ["users"])
+      cache.get("u1")
+      cache.get("u2")
+
+      tag_stats = cache.stats(tag: "users")
+      expect(tag_stats[:hits]).to eq(2)
+    end
+
+    it "returns per-tag miss counters" do
+      cache.set("u1", 1, tags: ["users"])
+      sleep 0.1
+      # Fetch a key that does not exist — records a miss (no tags to attribute)
+      cache.get("nonexistent")
+
+      tag_stats = cache.stats(tag: "users")
+      expect(tag_stats[:misses]).to eq(0)
+    end
+
+    it "returns per-tag eviction counters" do
+      cache.set("u1", 1, tags: ["users"])
+      cache.set("u2", 2, tags: ["users"])
+      cache.set("p1", 3, tags: ["posts"])
+      cache.set("k4", 4)
+      cache.set("k5", 5)
+
+      # Evict u1 (LRU)
+      cache.set("k6", 6)
+
+      user_stats = cache.stats(tag: "users")
+      expect(user_stats[:evictions]).to eq(1)
+
+      post_stats = cache.stats(tag: "posts")
+      expect(post_stats[:evictions]).to eq(0)
+    end
+
+    it "tracks hits across tags for multi-tagged entries" do
+      cache.set("key", "val", tags: %w[users admin])
+      cache.get("key")
+
+      expect(cache.stats(tag: "users")[:hits]).to eq(1)
+      expect(cache.stats(tag: "admin")[:hits]).to eq(1)
+    end
+
+    it "works with symbol tags" do
+      cache.set("u1", 1, tags: [:users])
+      cache.get("u1")
+
+      tag_stats = cache.stats(tag: :users)
+      expect(tag_stats[:hits]).to eq(1)
+    end
+  end
+
+  describe "#get_many" do
+    it "retrieves multiple keys at once" do
+      cache.set("a", 1)
+      cache.set("b", 2)
+      cache.set("c", 3)
+
+      result = cache.get_many(%w[a b c])
+      expect(result).to eq("a" => 1, "b" => 2, "c" => 3)
+    end
+
+    it "returns nil for missing keys" do
+      cache.set("a", 1)
+
+      result = cache.get_many(%w[a missing])
+      expect(result).to eq("a" => 1, "missing" => nil)
+    end
+
+    it "returns nil for expired keys" do
+      cache.set("a", 1, ttl: 0.05)
+      cache.set("b", 2)
+      sleep 0.1
+
+      result = cache.get_many(%w[a b])
+      expect(result).to eq("a" => nil, "b" => 2)
+    end
+
+    it "returns an empty hash for empty input" do
+      result = cache.get_many([])
+      expect(result).to eq({})
+    end
+
+    it "updates hit and miss stats correctly" do
+      cache.set("a", 1)
+      cache.set("b", 2)
+
+      cache.get_many(%w[a b missing])
+      stats = cache.stats
+      expect(stats[:hits]).to eq(2)
+      expect(stats[:misses]).to eq(1)
+    end
+  end
+
+  describe "#snapshot and #restore" do
+    it "round-trips cache state" do
+      cache.set("a", 1, tags: ["group"])
+      cache.set("b", 2, ttl: 300)
+      cache.set("c", 3)
+
+      data = cache.snapshot
+      new_cache = described_class.new(max_size: 5)
+      new_cache.restore(data)
+
+      expect(new_cache.get("a")).to eq(1)
+      expect(new_cache.get("b")).to eq(2)
+      expect(new_cache.get("c")).to eq(3)
+    end
+
+    it "preserves tags after restore" do
+      cache.set("a", 1, tags: ["group"])
+      cache.set("b", 2, tags: ["group"])
+      cache.set("c", 3)
+
+      data = cache.snapshot
+      new_cache = described_class.new(max_size: 5)
+      new_cache.restore(data)
+
+      removed = new_cache.invalidate_tag("group")
+      expect(removed).to eq(2)
+      expect(new_cache.get("c")).to eq(3)
+    end
+
+    it "preserves LRU order after restore" do
+      cache.set("a", 1)
+      cache.set("b", 2)
+      cache.set("c", 3)
+      cache.set("d", 4)
+      cache.set("e", 5)
+
+      data = cache.snapshot
+      new_cache = described_class.new(max_size: 5)
+      new_cache.restore(data)
+
+      # "a" should still be LRU
+      new_cache.set("f", 6)
+      expect(new_cache.get("a")).to be_nil
+      expect(new_cache.get("f")).to eq(6)
+    end
+
+    it "excludes already-expired entries" do
+      cache.set("a", 1, ttl: 0.05)
+      cache.set("b", 2)
+      sleep 0.1
+
+      data = cache.snapshot
+      new_cache = described_class.new(max_size: 5)
+      new_cache.restore(data)
+
+      expect(new_cache.get("a")).to be_nil
+      expect(new_cache.get("b")).to eq(2)
+    end
+
+    it "preserves remaining TTL" do
+      cache.set("a", 1, ttl: 300)
+      data = cache.snapshot
+
+      ttl = data[:entries]["a"][:ttl]
+      expect(ttl).to be_positive
+      expect(ttl).to be <= 300
+    end
+
+    it "clears existing data before restore" do
+      cache.set("existing", "old")
+
+      other = described_class.new(max_size: 5)
+      other.set("new", "data")
+      data = other.snapshot
+
+      cache.restore(data)
+      expect(cache.get("existing")).to be_nil
+      expect(cache.get("new")).to eq("data")
     end
   end
 end

@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.3.0
+
+### Added
+- Thread-safe `fetch` — compute-on-miss now holds the lock for the entire operation, preventing duplicate computation
+- Eviction callbacks via `on_evict { |key, value| ... }` — fires on LRU eviction and TTL expiry
+- Per-tag statistics via `stats(tag: :name)` — returns `{ hits:, misses:, evictions: }` for a specific tag
+- Batch retrieval via `get_many(keys)` — fetch multiple keys in a single lock acquisition, returns a hash
+- Snapshot and restore via `snapshot` / `restore(data)` — serialize and deserialize cache state for warm restarts
+
 ## 0.2.2
 
 - Add License badge to README
