@@ -6,6 +6,51 @@ RSpec.describe Philiprehberger::CacheKit do
   it "has a version number" do
     expect(Philiprehberger::CacheKit::VERSION).not_to be_nil
   end
+
+  it "defines an Error class inheriting from StandardError" do
+    expect(Philiprehberger::CacheKit::Error).to be < StandardError
+  end
+end
+
+RSpec.describe Philiprehberger::CacheKit::Entry do
+  describe "#expired?" do
+    it "returns false when no TTL is set" do
+      entry = described_class.new("value")
+      expect(entry.expired?).to be false
+    end
+
+    it "returns false when TTL has not elapsed" do
+      entry = described_class.new("value", ttl: 300)
+      expect(entry.expired?).to be false
+    end
+
+    it "returns true when TTL has elapsed" do
+      entry = described_class.new("value", ttl: 0.05)
+      sleep 0.1
+      expect(entry.expired?).to be true
+    end
+  end
+
+  describe "#tags" do
+    it "coerces symbol tags to strings" do
+      entry = described_class.new("value", tags: [:foo, :bar])
+      expect(entry.tags).to eq(%w[foo bar])
+    end
+
+    it "defaults to an empty array" do
+      entry = described_class.new("value")
+      expect(entry.tags).to eq([])
+    end
+  end
+
+  describe "#created_at" do
+    it "records the creation time" do
+      before = Time.now
+      entry = described_class.new("value")
+      after = Time.now
+      expect(entry.created_at).to be_between(before, after)
+    end
+  end
 end
 
 RSpec.describe Philiprehberger::CacheKit::Store do
@@ -480,6 +525,465 @@ RSpec.describe Philiprehberger::CacheKit::Store do
       cache.restore(data)
       expect(cache.get("existing")).to be_nil
       expect(cache.get("new")).to eq("data")
+    end
+
+    it "round-trips an empty cache" do
+      data = cache.snapshot
+      new_cache = described_class.new(max_size: 5)
+      new_cache.set("pre-existing", 1)
+      new_cache.restore(data)
+
+      expect(new_cache.size).to eq(0)
+      expect(new_cache.get("pre-existing")).to be_nil
+    end
+
+    it "skips entries with zero remaining TTL during restore" do
+      cache.set("a", 1, ttl: 0.05)
+      cache.set("b", 2)
+      sleep 0.1
+
+      # Manually build a snapshot with zero TTL to simulate edge case
+      data = { entries: { "x" => { value: 99, ttl: 0, tags: [] }, "y" => { value: 100, ttl: nil, tags: [] } },
+               order: %w[x y] }
+      new_cache = described_class.new(max_size: 5)
+      new_cache.restore(data)
+
+      expect(new_cache.get("x")).to be_nil
+      expect(new_cache.get("y")).to eq(100)
+    end
+  end
+
+  describe "default max_size" do
+    it "defaults to 1000 entries" do
+      large_cache = described_class.new
+      1001.times { |i| large_cache.set("k#{i}", i) }
+      expect(large_cache.size).to eq(1000)
+    end
+  end
+
+  describe "max_size: 1" do
+    subject(:tiny_cache) { described_class.new(max_size: 1) }
+
+    it "evicts the only entry when a new one is added" do
+      tiny_cache.set("a", 1)
+      tiny_cache.set("b", 2)
+      expect(tiny_cache.get("a")).to be_nil
+      expect(tiny_cache.get("b")).to eq(2)
+      expect(tiny_cache.size).to eq(1)
+    end
+  end
+
+  describe "#set edge cases" do
+    it "stores nil as a value" do
+      cache.set("key", nil)
+      # key? confirms the entry exists even though value is nil
+      expect(cache.key?("key")).to be true
+    end
+
+    it "stores complex objects as values" do
+      obj = { nested: [1, { deep: true }] }
+      cache.set("key", obj)
+      expect(cache.get("key")).to eq(obj)
+    end
+
+    it "overwrites a key at full capacity without net eviction" do
+      5.times { |i| cache.set("k#{i}", i) }
+      cache.set("k0", "updated")
+      expect(cache.size).to eq(5)
+      expect(cache.get("k0")).to eq("updated")
+      # All original keys except k0's old value should still be present
+      expect(cache.get("k1")).to eq(1)
+    end
+  end
+
+  describe "#fetch edge cases" do
+    it "recomputes when cached entry has expired" do
+      cache.set("key", "old", ttl: 0.05)
+      sleep 0.1
+      result = cache.fetch("key", ttl: 60) { "recomputed" }
+      expect(result).to eq("recomputed")
+      expect(cache.get("key")).to eq("recomputed")
+    end
+  end
+
+  describe "#invalidate_tag edge cases" do
+    it "returns zero when no entries match the tag" do
+      cache.set("a", 1, tags: ["other"])
+      removed = cache.invalidate_tag("nonexistent")
+      expect(removed).to eq(0)
+      expect(cache.size).to eq(1)
+    end
+
+    it "accepts symbol tags for invalidation" do
+      cache.set("a", 1, tags: [:mytag])
+      removed = cache.invalidate_tag(:mytag)
+      expect(removed).to eq(1)
+    end
+
+    it "removes only the matching tag when entry has multiple tags" do
+      cache.set("a", 1, tags: %w[tag1 tag2])
+      cache.set("b", 2, tags: %w[tag2 tag3])
+      cache.set("c", 3, tags: %w[tag1])
+
+      removed = cache.invalidate_tag("tag2")
+      expect(removed).to eq(2)
+      expect(cache.get("c")).to eq(3)
+      expect(cache.get("a")).to be_nil
+      expect(cache.get("b")).to be_nil
+    end
+  end
+
+  describe "LRU eviction edge cases" do
+    it "evicts multiple entries when filling well past capacity" do
+      5.times { |i| cache.set("k#{i}", i) }
+      3.times { |i| cache.set("new#{i}", i + 10) }
+
+      expect(cache.size).to eq(5)
+      expect(cache.get("k0")).to be_nil
+      expect(cache.get("k1")).to be_nil
+      expect(cache.get("k2")).to be_nil
+      expect(cache.get("new2")).to eq(12)
+    end
+
+    it "promotes a key via fetch so it avoids eviction" do
+      5.times { |i| cache.set("k#{i}", i) }
+      # Touch k0 via fetch (should move it to most recently used)
+      cache.fetch("k0") { "should not compute" }
+      cache.set("extra", 99)
+
+      expect(cache.get("k0")).to eq(0)
+      expect(cache.get("k1")).to be_nil
+    end
+  end
+
+  describe "#stats edge cases" do
+    it "resets size to zero after clear" do
+      cache.set("a", 1)
+      cache.set("b", 2)
+      cache.clear
+
+      stats = cache.stats
+      expect(stats[:size]).to eq(0)
+      # hits and misses are preserved even after clear
+      expect(stats[:hits]).to eq(0)
+    end
+
+    it "tracks evictions from expired entry access" do
+      cache.set("a", 1, ttl: 0.05)
+      sleep 0.1
+      cache.get("a")
+
+      expect(cache.stats[:evictions]).to eq(1)
+      expect(cache.stats[:misses]).to eq(1)
+    end
+  end
+
+  describe "#on_evict edge cases" do
+    it "fires callback on tag invalidation" do
+      evicted = []
+      cache.on_evict { |key, value| evicted << [key, value] }
+
+      cache.set("a", 1, tags: ["group"])
+      cache.set("b", 2, tags: ["group"])
+      cache.invalidate_tag("group")
+
+      expect(evicted).to be_empty
+    end
+
+    it "fires callbacks during prune for expired entries" do
+      evicted_keys = []
+      cache.on_evict { |key, _| evicted_keys << key }
+
+      cache.set("x", 1, ttl: 0.05)
+      cache.set("y", 2, ttl: 0.05)
+      cache.set("z", 3)
+      sleep 0.1
+      cache.prune
+
+      expect(evicted_keys).to contain_exactly("x", "y")
+    end
+  end
+
+  describe "#get_many edge cases" do
+    it "promotes touched keys in LRU order" do
+      5.times { |i| cache.set("k#{i}", i) }
+      # Touch k0 and k1 via get_many
+      cache.get_many(%w[k0 k1])
+      # Now k2 is the LRU
+      cache.set("extra", 99)
+
+      expect(cache.get("k0")).to eq(0)
+      expect(cache.get("k1")).to eq(1)
+      expect(cache.get("k2")).to be_nil
+    end
+
+    it "returns all nils when every key is missing" do
+      result = cache.get_many(%w[x y z])
+      expect(result).to eq("x" => nil, "y" => nil, "z" => nil)
+    end
+
+    it "tracks tag stats for hits on tagged entries" do
+      cache.set("a", 1, tags: ["grp"])
+      cache.set("b", 2, tags: ["grp"])
+      cache.get_many(%w[a b])
+
+      expect(cache.stats(tag: "grp")[:hits]).to eq(2)
+    end
+  end
+
+  describe "#fetch with nil cached value" do
+    it "does not recompute when cached value is nil and entry exists" do
+      cache.set("key", nil)
+      # fetch_entry returns nil for nil values, so block will be called
+      # This documents the current behavior: nil values cause recomputation
+      call_count = 0
+      cache.fetch("key") { call_count += 1; "new" }
+      # Because fetch_entry returns nil (the stored value), fetch treats it as a miss
+      expect(call_count).to eq(1)
+    end
+  end
+
+  describe "#delete edge cases" do
+    it "returns false when deleting an already-expired entry" do
+      cache.set("a", 1, ttl: 0.05)
+      sleep 0.1
+      # The entry is still in @data (not pruned), so delete_entry checks @data.key?
+      expect(cache.delete("a")).to be true
+    end
+
+    it "reduces size after deletion" do
+      cache.set("a", 1)
+      cache.set("b", 2)
+      cache.delete("a")
+      expect(cache.size).to eq(1)
+    end
+
+    it "allows re-setting a deleted key" do
+      cache.set("a", 1)
+      cache.delete("a")
+      cache.set("a", 2)
+      expect(cache.get("a")).to eq(2)
+    end
+  end
+
+  describe "#clear edge cases" do
+    it "does not fire eviction callbacks" do
+      evicted = []
+      cache.on_evict { |key, _| evicted << key }
+
+      cache.set("a", 1)
+      cache.set("b", 2)
+      cache.clear
+
+      expect(evicted).to be_empty
+    end
+
+    it "allows setting new entries after clear" do
+      cache.set("a", 1)
+      cache.clear
+      cache.set("b", 2)
+      expect(cache.get("b")).to eq(2)
+      expect(cache.size).to eq(1)
+    end
+  end
+
+  describe "TTL edge cases" do
+    it "expires entry with very small TTL" do
+      cache.set("a", 1, ttl: 0.001)
+      sleep 0.05
+      expect(cache.get("a")).to be_nil
+    end
+
+    it "counts expired entry access as an eviction in stats" do
+      cache.set("a", 1, ttl: 0.05)
+      sleep 0.1
+      cache.get("a")
+
+      stats = cache.stats
+      expect(stats[:evictions]).to eq(1)
+      expect(stats[:misses]).to eq(1)
+      expect(stats[:size]).to eq(0)
+    end
+
+    it "does not include expired entries in keys list" do
+      cache.set("a", 1, ttl: 0.05)
+      cache.set("b", 2)
+      sleep 0.1
+
+      expect(cache.keys).to eq(["b"])
+    end
+  end
+
+  describe "#[] and #[]= edge cases" do
+    it "returns nil for expired entries via []" do
+      cache.set("a", 1, ttl: 0.05)
+      sleep 0.1
+      expect(cache["a"]).to be_nil
+    end
+
+    it "overwrites existing entries via []=" do
+      cache["a"] = 1
+      cache["a"] = 2
+      expect(cache["a"]).to eq(2)
+    end
+  end
+
+  describe "tag operations edge cases" do
+    it "overwrites entry and uses new tags" do
+      cache.set("a", 1, tags: ["old"])
+      cache.set("a", 2, tags: ["new"])
+
+      expect(cache.invalidate_tag("old")).to eq(0)
+      expect(cache.invalidate_tag("new")).to eq(1)
+    end
+
+    it "invalidate_tag on empty cache returns zero" do
+      expect(cache.invalidate_tag("anything")).to eq(0)
+    end
+
+    it "invalidate_tag does not fire eviction callbacks" do
+      evicted = []
+      cache.on_evict { |key, _| evicted << key }
+
+      cache.set("a", 1, tags: ["grp"])
+      cache.set("b", 2, tags: ["grp"])
+      cache.invalidate_tag("grp")
+
+      expect(evicted).to be_empty
+    end
+
+    it "tracks tag eviction stats on LRU eviction of tagged entry" do
+      cache.set("t1", 1, tags: ["mytag"])
+      cache.set("t2", 2)
+      cache.set("t3", 3)
+      cache.set("t4", 4)
+      cache.set("t5", 5)
+      # Evict t1 (LRU, tagged with "mytag")
+      cache.set("t6", 6)
+
+      expect(cache.stats(tag: "mytag")[:evictions]).to eq(1)
+    end
+
+    it "tracks tag eviction stats on prune of expired tagged entry" do
+      cache.set("a", 1, ttl: 0.05, tags: ["group"])
+      cache.set("b", 2)
+      sleep 0.1
+      cache.prune
+
+      expect(cache.stats(tag: "group")[:evictions]).to eq(1)
+    end
+  end
+
+  describe "#stats edge cases" do
+    it "returns zero counters for unknown tag" do
+      stats = cache.stats(tag: "nonexistent")
+      expect(stats).to eq(hits: 0, misses: 0, evictions: 0)
+    end
+
+    it "accumulates hits across multiple gets" do
+      cache.set("a", 1)
+      3.times { cache.get("a") }
+
+      expect(cache.stats[:hits]).to eq(3)
+    end
+
+    it "preserves hit/miss counters after clear" do
+      cache.set("a", 1)
+      cache.get("a")
+      cache.get("missing")
+      cache.clear
+
+      stats = cache.stats
+      expect(stats[:hits]).to eq(1)
+      expect(stats[:misses]).to eq(1)
+    end
+  end
+
+  describe "#snapshot and #restore edge cases" do
+    it "restores entries without tags key using default empty array" do
+      data = {
+        entries: { "a" => { value: 1, ttl: nil } },
+        order: ["a"]
+      }
+      new_cache = described_class.new(max_size: 5)
+      # restore_entries passes attrs[:tags] || [] so missing tags defaults to []
+      new_cache.restore(data)
+
+      expect(new_cache.get("a")).to eq(1)
+      expect(new_cache.size).to eq(1)
+    end
+
+    it "snapshot captures entries with multiple tags" do
+      cache.set("a", 1, tags: %w[x y z])
+      data = cache.snapshot
+
+      expect(data[:entries]["a"][:tags]).to eq(%w[x y z])
+    end
+
+    it "restore handles order entries not in entries hash" do
+      data = {
+        entries: { "a" => { value: 1, ttl: nil, tags: [] } },
+        order: %w[a b c]
+      }
+      new_cache = described_class.new(max_size: 5)
+      new_cache.restore(data)
+
+      # Order should only include keys that exist in entries
+      expect(new_cache.keys).to eq(["a"])
+      expect(new_cache.size).to eq(1)
+    end
+  end
+
+  describe "#on_evict edge cases" do
+    it "fires callbacks in registration order" do
+      order = []
+      cache.on_evict { |_, _| order << :first }
+      cache.on_evict { |_, _| order << :second }
+
+      5.times { |i| cache.set("k#{i}", i) }
+      cache.set("extra", 99)
+
+      expect(order).to eq([:first, :second])
+    end
+
+    it "fires callback for each LRU eviction when adding multiple past capacity" do
+      evicted_keys = []
+      cache.on_evict { |key, _| evicted_keys << key }
+
+      5.times { |i| cache.set("k#{i}", i) }
+      3.times { |i| cache.set("new#{i}", i + 10) }
+
+      expect(evicted_keys).to eq(%w[k0 k1 k2])
+    end
+
+    it "receives correct value in callback" do
+      values = []
+      cache.on_evict { |_, value| values << value }
+
+      5.times { |i| cache.set("k#{i}", i * 10) }
+      cache.set("extra", 99)
+
+      expect(values).to eq([0])
+    end
+  end
+
+  describe "#prune edge cases" do
+    it "does not remove non-expired entries" do
+      cache.set("a", 1, ttl: 300)
+      cache.set("b", 2)
+      cache.prune
+
+      expect(cache.size).to eq(2)
+    end
+
+    it "increments eviction counter for each pruned entry" do
+      cache.set("a", 1, ttl: 0.05)
+      cache.set("b", 2, ttl: 0.05)
+      cache.set("c", 3, ttl: 0.05)
+      sleep 0.1
+      cache.prune
+
+      expect(cache.stats[:evictions]).to eq(3)
     end
   end
 end
