@@ -1,6 +1,6 @@
 # frozen_string_literal: true
 
-require "philiprehberger/cache_kit"
+require 'philiprehberger/cache_kit'
 
 RSpec.configure do |config|
   config.expect_with :rspec do |expectations|
