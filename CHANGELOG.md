@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-04-01
+
+### Added
+- `#set_many(hash, ttl:, tags:)` for bulk setting multiple entries
+- `#compact` for pruning expired entries with eviction count
+- `#refresh(key, ttl:)` for resetting TTL without changing value
+
 ## [0.3.7] - 2026-03-31
 
 ### Added

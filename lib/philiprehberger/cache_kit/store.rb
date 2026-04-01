@@ -79,6 +79,46 @@ module Philiprehberger
         @mutex.synchronize { prune_expired }
       end
 
+      # Bulk set multiple entries in a single lock acquisition
+      #
+      # @param hash [Hash] key => value pairs
+      # @param ttl [Integer, nil] time-to-live in seconds
+      # @param tags [Array<String>] tags for all entries
+      # @return [void]
+      def set_many(hash, ttl: nil, tags: [])
+        @mutex.synchronize do
+          hash.each { |key, value| store_entry(key, value, ttl: ttl, tags: tags) }
+        end
+      end
+
+      # Prune expired entries and return the count of evicted items
+      #
+      # @return [Integer] number of evicted entries
+      def compact
+        @mutex.synchronize do
+          expired_keys = @data.select { |_, entry| entry.expired? }.keys
+          expired_keys.each { |key| remove_entry(key) }
+          expired_keys.length
+        end
+      end
+
+      # Reset the TTL of an existing entry without changing its value
+      #
+      # @param key [String] the cache key
+      # @param ttl [Integer, nil] new TTL in seconds
+      # @return [Boolean] true if the key exists and was refreshed
+      def refresh(key, ttl: nil)
+        @mutex.synchronize do
+          entry = @data[key]
+          return false if entry.nil? || entry.expired?
+
+          remove_entry(key)
+          @data[key] = Entry.new(entry.value, ttl: ttl, tags: entry.tags)
+          @order.push(key)
+          true
+        end
+      end
+
       private
 
       def global_stats
