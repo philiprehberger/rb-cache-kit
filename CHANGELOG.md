@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.5.0] - 2026-04-04
+
+### Changed
+- `#get_many` now accepts splat args (`get_many(*keys)`) and skips misses, returning only found entries
+
+### Added
+- `gem-version` field to bug report issue template
+- `Alternatives considered` textarea to feature request issue template
+
 ## [0.4.0] - 2026-04-01
 
 ### Added
