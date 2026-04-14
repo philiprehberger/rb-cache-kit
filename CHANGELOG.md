@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.6.0] - 2026-04-14
+
+### Added
+- `#ttl(key)` returns remaining seconds until expiry (nil if no TTL, missing, or expired)
+- `#expire_at(key)` returns absolute expiration `Time` (nil if no TTL, missing, or expired)
+- `#delete_many(*keys)` bulk-deletes multiple keys in a single lock acquisition; returns count removed
+- `#keys_by_tag(tag)` returns the keys associated with a tag (non-expired only)
+- `#increment(key, by: 1, ttl: nil)` atomic numeric increment with optional TTL override
+- `#decrement(key, by: 1, ttl: nil)` atomic numeric decrement
+
+### Changed
+- Align `.github/ISSUE_TEMPLATE/bug_report.yml` and `feature_request.yml` with the latest issue-template guide (required fields, field order, reproduction/proposed-api placeholders)
+
 ## [0.5.0] - 2026-04-04
 
 ### Changed

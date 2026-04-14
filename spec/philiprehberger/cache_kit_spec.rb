@@ -1071,4 +1071,206 @@ RSpec.describe Philiprehberger::CacheKit::Store do
       expect(store.get('a')).to eq('hello')
     end
   end
+
+  describe '#ttl' do
+    it 'returns remaining seconds for a key with TTL' do
+      store = Philiprehberger::CacheKit::Store.new(max_size: 10)
+      store.set('a', 1, ttl: 60)
+      remaining = store.ttl('a')
+      expect(remaining).to be_a(Float)
+      expect(remaining).to be > 0
+      expect(remaining).to be <= 60
+    end
+
+    it 'returns nil for a key with no TTL' do
+      store = Philiprehberger::CacheKit::Store.new(max_size: 10)
+      store.set('a', 1)
+      expect(store.ttl('a')).to be_nil
+    end
+
+    it 'returns nil for a missing key' do
+      store = Philiprehberger::CacheKit::Store.new(max_size: 10)
+      expect(store.ttl('missing')).to be_nil
+    end
+
+    it 'returns nil for an expired key' do
+      store = Philiprehberger::CacheKit::Store.new(max_size: 10)
+      store.set('a', 1, ttl: 0.01)
+      sleep 0.02
+      expect(store.ttl('a')).to be_nil
+    end
+  end
+
+  describe '#expire_at' do
+    it 'returns an absolute Time for a key with TTL' do
+      store = Philiprehberger::CacheKit::Store.new(max_size: 10)
+      before = Time.now
+      store.set('a', 1, ttl: 60)
+      deadline = store.expire_at('a')
+      expect(deadline).to be_a(Time)
+      expect(deadline).to be >= before + 60
+    end
+
+    it 'returns nil for a key with no TTL' do
+      store = Philiprehberger::CacheKit::Store.new(max_size: 10)
+      store.set('a', 1)
+      expect(store.expire_at('a')).to be_nil
+    end
+
+    it 'returns nil for a missing key' do
+      store = Philiprehberger::CacheKit::Store.new(max_size: 10)
+      expect(store.expire_at('missing')).to be_nil
+    end
+
+    it 'returns nil for an expired key' do
+      store = Philiprehberger::CacheKit::Store.new(max_size: 10)
+      store.set('a', 1, ttl: 0.01)
+      sleep 0.02
+      expect(store.expire_at('a')).to be_nil
+    end
+  end
+
+  describe '#delete_many' do
+    it 'deletes multiple keys and returns the count removed' do
+      store = Philiprehberger::CacheKit::Store.new(max_size: 10)
+      store.set('a', 1)
+      store.set('b', 2)
+      store.set('c', 3)
+      expect(store.delete_many('a', 'b', 'missing')).to eq(2)
+      expect(store.keys).to contain_exactly('c')
+    end
+
+    it 'returns zero when nothing matches' do
+      store = Philiprehberger::CacheKit::Store.new(max_size: 10)
+      store.set('a', 1)
+      expect(store.delete_many('x', 'y')).to eq(0)
+      expect(store.size).to eq(1)
+    end
+
+    it 'accepts an array via splat' do
+      store = Philiprehberger::CacheKit::Store.new(max_size: 10)
+      store.set('a', 1)
+      store.set('b', 2)
+      expect(store.delete_many(%w[a b])).to eq(2)
+      expect(store.size).to eq(0)
+    end
+
+    it 'does not fire eviction callbacks' do
+      store = Philiprehberger::CacheKit::Store.new(max_size: 10)
+      store.set('a', 1)
+      store.set('b', 2)
+      fired = []
+      store.on_evict { |key, _value| fired << key }
+      store.delete_many('a', 'b')
+      expect(fired).to be_empty
+    end
+  end
+
+  describe '#keys_by_tag' do
+    it 'returns keys associated with a tag' do
+      store = Philiprehberger::CacheKit::Store.new(max_size: 10)
+      store.set('user:1', 1, tags: ['users'])
+      store.set('user:2', 2, tags: ['users'])
+      store.set('post:1', 3, tags: ['posts'])
+      expect(store.keys_by_tag('users')).to contain_exactly('user:1', 'user:2')
+    end
+
+    it 'accepts a symbol tag' do
+      store = Philiprehberger::CacheKit::Store.new(max_size: 10)
+      store.set('a', 1, tags: [:alpha])
+      expect(store.keys_by_tag(:alpha)).to eq(['a'])
+    end
+
+    it 'returns an empty array for an unknown tag' do
+      store = Philiprehberger::CacheKit::Store.new(max_size: 10)
+      store.set('a', 1, tags: ['x'])
+      expect(store.keys_by_tag('y')).to eq([])
+    end
+
+    it 'excludes expired entries' do
+      store = Philiprehberger::CacheKit::Store.new(max_size: 10)
+      store.set('a', 1, ttl: 0.01, tags: ['t'])
+      store.set('b', 2, tags: ['t'])
+      sleep 0.02
+      expect(store.keys_by_tag('t')).to eq(['b'])
+    end
+  end
+
+  describe '#increment' do
+    it 'initializes missing keys to 0 before incrementing' do
+      store = Philiprehberger::CacheKit::Store.new(max_size: 10)
+      expect(store.increment('views')).to eq(1)
+      expect(store.get('views')).to eq(1)
+    end
+
+    it 'accumulates across calls' do
+      store = Philiprehberger::CacheKit::Store.new(max_size: 10)
+      store.increment('views')
+      store.increment('views')
+      expect(store.increment('views')).to eq(3)
+    end
+
+    it 'respects the by: step' do
+      store = Philiprehberger::CacheKit::Store.new(max_size: 10)
+      expect(store.increment('views', by: 5)).to eq(5)
+      expect(store.increment('views', by: 2)).to eq(7)
+    end
+
+    it 'preserves existing TTL when ttl: is omitted' do
+      store = Philiprehberger::CacheKit::Store.new(max_size: 10)
+      store.set('views', 10, ttl: 60)
+      store.increment('views')
+      expect(store.ttl('views')).to be > 0
+    end
+
+    it 'replaces TTL when ttl: is provided' do
+      store = Philiprehberger::CacheKit::Store.new(max_size: 10)
+      store.set('views', 10)
+      store.increment('views', ttl: 30)
+      remaining = store.ttl('views')
+      expect(remaining).to be > 0
+      expect(remaining).to be <= 30
+    end
+
+    it 'resets an expired key to 0 before incrementing' do
+      store = Philiprehberger::CacheKit::Store.new(max_size: 10)
+      store.set('views', 99, ttl: 0.01)
+      sleep 0.02
+      expect(store.increment('views')).to eq(1)
+    end
+
+    it 'raises on non-numeric values' do
+      store = Philiprehberger::CacheKit::Store.new(max_size: 10)
+      store.set('views', 'oops')
+      expect { store.increment('views') }.to raise_error(Philiprehberger::CacheKit::Error, /not numeric/)
+    end
+
+    it 'is atomic under concurrent callers' do
+      store = Philiprehberger::CacheKit::Store.new(max_size: 10)
+      threads = Array.new(10) do
+        Thread.new { 100.times { store.increment('counter') } }
+      end
+      threads.each(&:join)
+      expect(store.get('counter')).to eq(1000)
+    end
+  end
+
+  describe '#decrement' do
+    it 'decrements an existing value' do
+      store = Philiprehberger::CacheKit::Store.new(max_size: 10)
+      store.set('quota', 10)
+      expect(store.decrement('quota')).to eq(9)
+    end
+
+    it 'initializes missing keys to 0 then subtracts' do
+      store = Philiprehberger::CacheKit::Store.new(max_size: 10)
+      expect(store.decrement('quota', by: 3)).to eq(-3)
+    end
+
+    it 'respects the by: step' do
+      store = Philiprehberger::CacheKit::Store.new(max_size: 10)
+      store.set('quota', 100)
+      expect(store.decrement('quota', by: 25)).to eq(75)
+    end
+  end
 end
