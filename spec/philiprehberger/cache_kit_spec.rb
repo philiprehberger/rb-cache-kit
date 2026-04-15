@@ -1365,4 +1365,46 @@ RSpec.describe Philiprehberger::CacheKit::Store do
       expect(store.decrement('quota', by: 25)).to eq(75)
     end
   end
+
+  describe '#replace_if_equal' do
+    it 'replaces the value and returns true when expected matches' do
+      store = Philiprehberger::CacheKit::Store.new(max_size: 10)
+      store.set('flag', 'off')
+      expect(store.replace_if_equal('flag', 'off', 'on')).to be true
+      expect(store.get('flag')).to eq('on')
+    end
+
+    it 'returns false when the expected value does not match' do
+      store = Philiprehberger::CacheKit::Store.new(max_size: 10)
+      store.set('flag', 'on')
+      expect(store.replace_if_equal('flag', 'off', 'reset')).to be false
+      expect(store.get('flag')).to eq('on')
+    end
+
+    it 'returns false when the key is missing' do
+      store = Philiprehberger::CacheKit::Store.new(max_size: 10)
+      expect(store.replace_if_equal('absent', 'anything', 'next')).to be false
+    end
+
+    it 'returns false when the existing entry has expired' do
+      store = Philiprehberger::CacheKit::Store.new(max_size: 10)
+      store.set('flag', 'on', ttl: 0.01)
+      sleep(0.05)
+      expect(store.replace_if_equal('flag', 'on', 'next')).to be false
+    end
+
+    it 'preserves tags on success' do
+      store = Philiprehberger::CacheKit::Store.new(max_size: 10)
+      store.set('flag', 'off', tags: ['feature:a'])
+      expect(store.replace_if_equal('flag', 'off', 'on')).to be true
+      expect(store.keys_by_tag('feature:a')).to include('flag')
+    end
+
+    it 'refreshes the TTL when ttl: is supplied' do
+      store = Philiprehberger::CacheKit::Store.new(max_size: 10)
+      store.set('flag', 'off', ttl: 60)
+      expect(store.replace_if_equal('flag', 'off', 'on', ttl: 10)).to be true
+      expect(store.ttl('flag')).to be <= 10
+    end
+  end
 end
