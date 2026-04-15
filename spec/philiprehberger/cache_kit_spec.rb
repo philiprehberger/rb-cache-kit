@@ -228,6 +228,44 @@ RSpec.describe Philiprehberger::CacheKit::Store do
     end
   end
 
+  describe '#values' do
+    it 'returns all inserted values' do
+      cache.set('a', 1)
+      cache.set('b', 2)
+      cache.set('c', 3)
+      expect(cache.values).to contain_exactly(1, 2, 3)
+    end
+
+    it 'excludes expired entries' do
+      cache.set('a', 1)
+      cache.set('b', 2)
+      cache.set('c', 3, ttl: 0.05)
+      sleep 0.1
+      expect(cache.values).to contain_exactly(1, 2)
+    end
+
+    it 'returns an empty array when cache is empty' do
+      expect(cache.values).to eq([])
+    end
+
+    it 'does not alter LRU ordering' do
+      small = Philiprehberger::CacheKit::Store.new(max_size: 3)
+      small.set('a', 1)
+      small.set('b', 2)
+      small.set('c', 3)
+
+      # Calling #values should not promote 'a' to most-recently-used.
+      small.values
+
+      # Inserting a new entry must still evict the true LRU ('a').
+      small.set('d', 4)
+      expect(small.get('a')).to be_nil
+      expect(small.get('b')).to eq(2)
+      expect(small.get('c')).to eq(3)
+      expect(small.get('d')).to eq(4)
+    end
+  end
+
   describe '#[] and #[]=' do
     it 'reads values with []' do
       cache.set('key', 'value')
