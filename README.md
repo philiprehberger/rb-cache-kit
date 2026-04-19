@@ -111,6 +111,24 @@ evicted = cache.compact  # => 3 (number of expired entries removed)
 cache.refresh('key', ttl: 600)  # => true (reset TTL without changing value)
 ```
 
+### Touch
+
+Promote a key to most-recently-used in LRU order, shielding it from the next
+eviction. Pass `ttl:` to also reset the entry's expiry to `now + ttl` seconds.
+Returns `true` for live keys and `false` when the key is missing or expired
+(expired keys are removed as a side effect).
+
+```ruby
+cache.set('a', 1)
+cache.set('b', 2)
+cache.set('c', 3)
+
+cache.touch('a')           # => true ('a' is now most recently used)
+cache.touch('missing')     # => false
+
+cache.touch('a', ttl: 600) # => true (also resets TTL to 600s)
+```
+
 ### Hash-like Access
 
 ```ruby
@@ -277,6 +295,7 @@ new_cache.restore(Marshal.load(File.read("cache.bin")))
 | `#set_many(hash, ttl:, tags:)` | Bulk set multiple entries |
 | `#compact` | Prune expired entries, return eviction count |
 | `#refresh(key, ttl:)` | Reset TTL without changing value |
+| `Store#touch(key, ttl:)` | Promote a key to most-recently-used; optionally reset TTL |
 | `Store#snapshot` | Serialize cache state to a hash |
 | `Store#restore(data)` | Restore cache state from a snapshot |
 | `Store#ttl(key)` | Remaining seconds until expiry (nil if none/missing/expired) |

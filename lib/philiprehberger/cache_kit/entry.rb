@@ -44,6 +44,16 @@ module Philiprehberger
         remaining = @ttl - (Time.now - @created_at)
         remaining.positive? ? remaining : 0.0
       end
+
+      # Reset the entry's expiration so it now expires at `Time.now + ttl`.
+      # A nil ttl clears the expiry (entry becomes non-expiring).
+      #
+      # @param ttl [Numeric, nil] new time-to-live in seconds
+      # @return [void]
+      def reset_ttl!(ttl)
+        @ttl = ttl
+        @created_at = Time.now
+      end
     end
   end
 end

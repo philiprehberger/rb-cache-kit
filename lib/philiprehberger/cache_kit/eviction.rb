@@ -6,7 +6,7 @@ module Philiprehberger
     module Eviction
       private
 
-      def touch(key)
+      def promote_key(key)
         @order.delete(key)
         @order.push(key)
       end
@@ -18,7 +18,7 @@ module Philiprehberger
 
         @hits += 1
         record_tag_hit(entry)
-        touch(key)
+        promote_key(key)
         entry.value
       end
 
