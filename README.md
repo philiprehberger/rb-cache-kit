@@ -256,6 +256,18 @@ cache.decrement("quota", by: 2)      # => -2 (if "quota" was missing)
 
 Non-numeric values raise `Philiprehberger::CacheKit::Error`.
 
+### Optimistic Locking
+
+`replace_if_equal` atomically swaps a value only when the current entry matches the expected value, enabling compare-and-swap workflows without external coordination.
+
+```ruby
+cache.set("flag", "off")
+cache.replace_if_equal("flag", "off", "on")  # => true
+cache.replace_if_equal("flag", "off", "on")  # => false (value is now "on")
+```
+
+Returns `true` on a successful swap and `false` when the key is missing, expired, or holds a different value. Existing tags are preserved; pass `ttl:` to refresh the expiration at the same time.
+
 ### Snapshot and Restore
 
 Serialize cache state for warm restarts. The snapshot captures all entries with their remaining TTL, tags, and LRU order.
@@ -304,6 +316,7 @@ new_cache.restore(Marshal.load(File.read("cache.bin")))
 | `Store#keys_by_tag(tag)` | Keys associated with a tag (non-expired) |
 | `Store#increment(key, by:, ttl:)` | Atomic numeric increment |
 | `Store#decrement(key, by:, ttl:)` | Atomic numeric decrement |
+| `Store#replace_if_equal(key, expected, new_value, ttl:)` | Compare-and-swap; returns `true` on a successful swap, `false` otherwise |
 
 ## Development
 

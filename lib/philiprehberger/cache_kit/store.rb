@@ -238,6 +238,34 @@ module Philiprehberger
         @mutex.synchronize { apply_counter_delta(key, -by, ttl: ttl) }
       end
 
+      # Compare-and-swap: only replace the value when the current stored value
+      # equals `expected`. Fires no swap when the key is missing, expired, or
+      # holds a different value. Preserves the existing tags, but refreshes
+      # the TTL from `ttl` when provided (`nil` keeps the current TTL).
+      #
+      # Returns true on a successful swap and false otherwise, enabling
+      # optimistic locking patterns.
+      #
+      # @param key [String] the cache key
+      # @param expected [Object] value the caller believes is stored
+      # @param new_value [Object] replacement value
+      # @param ttl [Numeric, nil] optional TTL override (nil preserves current TTL)
+      # @return [Boolean]
+      def replace_if_equal(key, expected, new_value, ttl: nil)
+        @mutex.synchronize do
+          entry = @data[key]
+          return false if entry.nil? || entry.expired?
+          return false unless entry.value == expected
+
+          preserved_ttl = ttl.nil? ? entry.ttl : ttl
+          tags = entry.tags
+          remove_entry(key)
+          @data[key] = Entry.new(new_value, ttl: preserved_ttl, tags: tags)
+          @order.push(key)
+          true
+        end
+      end
+
       private
 
       def apply_counter_delta(key, delta, ttl: nil)

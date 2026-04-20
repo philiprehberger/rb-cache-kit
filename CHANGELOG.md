@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.9.0] - 2026-04-20
+
+### Added
+- `Store#replace_if_equal(key, expected, new_value, ttl: nil)` — compare-and-swap primitive for optimistic locking. Atomically replaces the stored value only when it matches `expected`, preserving existing tags and (optionally) refreshing the TTL. Returns `true` on a successful swap, `false` otherwise.
+
 ## [0.8.0] - 2026-04-18
 
 ### Added
