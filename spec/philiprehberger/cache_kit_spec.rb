@@ -266,6 +266,57 @@ RSpec.describe Philiprehberger::CacheKit::Store do
     end
   end
 
+  describe '#peek' do
+    it 'returns the value for a present, non-expired entry' do
+      cache.set('a', 1)
+      expect(cache.peek('a')).to eq(1)
+    end
+
+    it 'returns nil for a missing key' do
+      expect(cache.peek('missing')).to be_nil
+    end
+
+    it 'returns nil for an expired entry' do
+      cache.set('a', 1, ttl: 0.05)
+      sleep 0.1
+      expect(cache.peek('a')).to be_nil
+    end
+
+    it 'does not affect LRU ordering' do
+      small = Philiprehberger::CacheKit::Store.new(max_size: 3)
+      small.set('a', 1)
+      small.set('b', 2)
+      small.set('c', 3)
+
+      small.peek('a')
+      small.set('d', 4)
+
+      # 'a' should still be the LRU and have been evicted.
+      expect(small.get('a')).to be_nil
+      expect(small.get('b')).to eq(2)
+    end
+
+    it 'does not record a hit or a miss' do
+      cache.set('a', 1)
+      cache.peek('a')
+      cache.peek('missing')
+
+      stats = cache.stats
+      expect(stats[:hits]).to eq(0)
+      expect(stats[:misses]).to eq(0)
+    end
+
+    it 'does not remove an expired entry' do
+      cache.set('a', 1, ttl: 0.05)
+      sleep 0.1
+      cache.peek('a')
+
+      # The entry should still be present internally until something
+      # evicts it (e.g., #get or #prune).
+      expect(cache.size).to eq(1)
+    end
+  end
+
   describe '#[] and #[]=' do
     it 'reads values with []' do
       cache.set('key', 'value')

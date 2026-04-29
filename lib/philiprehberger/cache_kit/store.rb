@@ -72,6 +72,24 @@ module Philiprehberger
         @mutex.synchronize { @data.reject { |_, e| e.expired? }.values.map(&:value) }
       end
 
+      # Read a value without affecting LRU order or hit/miss counters.
+      #
+      # Returns the stored value when the entry is present and not expired,
+      # otherwise +nil+. Unlike {#get}, +peek+ does not promote the entry to
+      # most-recently-used, does not record a hit or miss, and does not
+      # remove expired entries — it is a pure read for inspection paths.
+      #
+      # @param key [Object] the key to inspect
+      # @return [Object, nil] the value, or nil for missing/expired entries
+      def peek(key)
+        @mutex.synchronize do
+          entry = @data[key]
+          next nil if entry.nil? || entry.expired?
+
+          entry.value
+        end
+      end
+
       def [](key) = get(key)
 
       def []=(key, value)

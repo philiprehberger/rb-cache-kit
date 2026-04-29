@@ -129,6 +129,24 @@ cache.touch('missing')     # => false
 cache.touch('a', ttl: 600) # => true (also resets TTL to 600s)
 ```
 
+### Peek
+
+Read a value without affecting LRU order or hit/miss counters. Useful for
+inspection paths that should not influence eviction:
+
+```ruby
+cache.set("user:1", { name: "Alice" })
+
+# Reading via peek does not promote 'user:1' to most-recently-used,
+# and does not record a hit or miss.
+cache.peek("user:1")     # => { name: "Alice" }
+cache.peek("missing")    # => nil
+cache.stats              # => { ..., hits: 0, misses: 0, ... }
+```
+
+Returns `nil` for missing keys and for entries whose TTL has elapsed. Peek
+does not remove expired entries — call `#prune` (or `#get`) to evict them.
+
 ### Hash-like Access
 
 ```ruby
@@ -288,6 +306,7 @@ new_cache.restore(Marshal.load(File.read("cache.bin")))
 |--------|-------------|
 | `Store.new(max_size: 1000)` | Create a cache with max entries |
 | `Store#get(key)` | Get a value (nil if missing/expired) |
+| `Store#peek(key)` | Read a value without affecting LRU order or hit/miss counters |
 | `Store#set(key, value, ttl:, tags:)` | Store a value |
 | `Store#fetch(key, ttl:, tags:, &block)` | Get or compute a value (thread-safe) |
 | `Store#delete(key)` | Delete a key |
