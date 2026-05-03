@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.11.0] - 2026-05-02
+
+### Added
+- `Store#tags` — sorted list of all tags currently in use across non-expired entries, complementing `keys_by_tag` and `stats(tag:)` for tag discovery
+
 ## [0.10.0] - 2026-04-28
 
 ### Added

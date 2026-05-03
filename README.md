@@ -258,6 +258,17 @@ cache.keys_by_tag(:users)  # => ["user:1", "user:2"]
 cache.keys_by_tag("none")  # => []
 ```
 
+### Tag Discovery
+
+List every tag currently in use across the cache.
+
+```ruby
+cache.set("user:1", data1, tags: ["users"])
+cache.set("post:1", data2, tags: ["posts"])
+
+cache.tags # => ["posts", "users"]
+```
+
 ### Atomic Counters
 
 Atomically increment and decrement numeric entries. Missing or expired keys
@@ -333,6 +344,7 @@ new_cache.restore(Marshal.load(File.read("cache.bin")))
 | `Store#expire_at(key)` | Absolute expiration `Time` (nil if none/missing/expired) |
 | `Store#delete_many(*keys)` | Bulk-delete, returns count removed |
 | `Store#keys_by_tag(tag)` | Keys associated with a tag (non-expired) |
+| `Store#tags` | Sorted list of all tags currently in use across non-expired entries |
 | `Store#increment(key, by:, ttl:)` | Atomic numeric increment |
 | `Store#decrement(key, by:, ttl:)` | Atomic numeric decrement |
 | `Store#replace_if_equal(key, expected, new_value, ttl:)` | Compare-and-swap; returns `true` on a successful swap, `false` otherwise |

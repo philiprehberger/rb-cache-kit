@@ -233,6 +233,23 @@ module Philiprehberger
         end
       end
 
+      # Return the sorted list of all tags currently in use across non-expired
+      # entries. Useful for discovering tags without remembering each one
+      # passed to #set / #set_many.
+      #
+      # @return [Array<String>] sorted unique tag values
+      def tags
+        @mutex.synchronize do
+          seen = {}
+          @data.each_value do |entry|
+            next if entry.expired?
+
+            entry.tags.each { |t| seen[t] = true }
+          end
+          seen.keys.sort
+        end
+      end
+
       # Atomically increment a numeric entry. Initializes missing or
       # expired keys to 0 before applying the delta.
       #

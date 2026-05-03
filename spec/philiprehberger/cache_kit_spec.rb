@@ -1339,6 +1339,61 @@ RSpec.describe Philiprehberger::CacheKit::Store do
     end
   end
 
+  describe '#tags' do
+    it 'returns an empty array for an empty store' do
+      store = Philiprehberger::CacheKit::Store.new(max_size: 10)
+      expect(store.tags).to eq([])
+    end
+
+    it 'returns the single tag in use' do
+      store = Philiprehberger::CacheKit::Store.new(max_size: 10)
+      store.set('a', 1, tags: ['users'])
+      expect(store.tags).to eq(['users'])
+    end
+
+    it 'deduplicates tags shared across entries' do
+      store = Philiprehberger::CacheKit::Store.new(max_size: 10)
+      store.set('user:1', 1, tags: ['users'])
+      store.set('user:2', 2, tags: ['users'])
+      expect(store.tags).to eq(['users'])
+    end
+
+    it 'returns sorted tags' do
+      store = Philiprehberger::CacheKit::Store.new(max_size: 10)
+      store.set('a', 1, tags: %w[zeta alpha mu])
+      expect(store.tags).to eq(%w[alpha mu zeta])
+    end
+
+    it 'unions tags across multiple entries' do
+      store = Philiprehberger::CacheKit::Store.new(max_size: 10)
+      store.set('a', 1, tags: %w[users active])
+      store.set('b', 2, tags: %w[users archived])
+      expect(store.tags).to eq(%w[active archived users])
+    end
+
+    it 'omits tags from deleted entries' do
+      store = Philiprehberger::CacheKit::Store.new(max_size: 10)
+      store.set('a', 1, tags: ['gone'])
+      store.set('b', 2, tags: ['stays'])
+      store.delete('a')
+      expect(store.tags).to eq(['stays'])
+    end
+
+    it 'omits tags from expired entries' do
+      store = Philiprehberger::CacheKit::Store.new(max_size: 10)
+      store.set('a', 1, ttl: 0.01, tags: ['stale'])
+      store.set('b', 2, tags: ['fresh'])
+      sleep 0.02
+      expect(store.tags).to eq(['fresh'])
+    end
+
+    it 'coerces symbol tags to strings' do
+      store = Philiprehberger::CacheKit::Store.new(max_size: 10)
+      store.set('a', 1, tags: [:sym])
+      expect(store.tags).to eq(['sym'])
+    end
+  end
+
   describe '#increment' do
     it 'initializes missing keys to 0 before incrementing' do
       store = Philiprehberger::CacheKit::Store.new(max_size: 10)
